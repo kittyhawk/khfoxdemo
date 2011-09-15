@@ -1,0 +1,82 @@
+#!/bin/bash
+export verbose=1
+LIVEGRAPH=./livegraph
+ARGONNEFE=bg
+
+function VERBOSE
+{
+  ((verbose > 0)) && printf "$*\n" > /dev/stderr
+}
+
+function killchildren 
+{
+  VERBOSE "killchildren : $1"
+  ppid=$1
+  if [[ -z $ppid ]]
+  then
+    ppid=$$
+  fi
+  children="$(ps --ppid $ppid -o pid --no-headings)" 
+  for pid in "$children"
+  do
+    if [[ -n $pid ]]
+    then
+      VERBOSE "killing $pid"
+      kill -9 $pid > /dev/null 2>&1
+    fi
+  done
+}
+
+function cleanup
+{
+   VERBOSE cleanup
+   killchildren
+}
+
+trap cleanup SIGHUP 
+trap cleanup SIGTRAP 
+trap cleanup SIGKILL 
+trap "" SIGCHLD 
+trap cleanup SIGQUIT 
+trap cleanup SIGINT 
+trap cleanup SIGABRT 
+trap "" EXIT
+trap "" SIGTERM
+
+export PATH=$PATH:scripts
+
+host=$1
+rows=$2
+cols=$3
+
+if [[ -z $host || -z $rows || -z $cols ]]; then
+   echo "USAGE $0 <host> <rows> <cols>"
+   exit -1
+fi
+
+if [[ -a log ]]; then rm log; fi
+
+(ssh -T $ARGONNEFE "ssh -T root@$host tail -n+0 -s0 -F log" </dev/null ) > log &
+
+while [[ ! -a log ]]; do sleep 1; done
+
+
+export LIVEGRAPH_TITLE="Living Nodes"
+export LIVEGRAPH_YLABEL="Count"
+export LIVEGRAPH_YMAX=$((rows * cols * 2))
+export LIVEGRAPH_XWINDOW=100
+export LIVEGRAPH_XHISTORY=50
+
+tail -n+0 -s0 -F log | while read line; do if [[ $line = total:* ]]; then echo ${line##*:}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x100 &
+
+export LIVEGRAPH_TITLE="Node Status"
+export LIVEGRAPH_YLABEL=""
+export LIVEGRAPH_CBLABEL='DEAD -> ALIVE' 
+export LIVEGRAPH_NOCOLORBOX="1"
+export LIVEGRAPH_CBRANGE='[0:1]'
+export LIVEGRAPH_COLS=$cols
+export LIVEGRAPH_PALETTE='rgbformula -3,3,0'
+export LIVEGRAPH_PLOTTYPE=matrix
+export LIVEGRAPH_ROWS=$rows
+
+tail -n+0 -s0 -F log | while read line; do if [[ $line != total:* ]]; then echo ${line}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x500

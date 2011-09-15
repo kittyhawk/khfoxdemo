@@ -1,0 +1,479 @@
+#!/bin/bash
+#set -x
+#####################################
+#
+#  IBM Coporation
+#  Project kittyhawk
+#
+#  live data ploting for sys s demo
+#
+#####################################
+
+# pipe the output of this to gnuplot eg.
+# livegraph | gnuplot -noraise -geometry 500x100
+
+# in general livegraph is expecting a single column of y values
+# except in the case of bar in which case it is accepting x,y values
+
+# READONLY CONSTANTS
+declare -r DATADIR=/tmp
+declare -r dataext=${LIVEGRAPH_DATAFILEEXT:-livegnuplotdata}
+declare -r DATAFILE=$DATADIR/$$.$USER.$dataext
+declare -r GPPRNFILE=$DATADIR/$$.$USER.gpout
+
+declare plottype=${LIVEGRAPH_PLOTTYPE:-"lines"}
+declare title=${LIVEGRAPH_TITLE:-""}
+declare ylabel=${LIVEGRAPH_YLABEL:-""}
+
+# general formatting stuff
+declare yformat=${LIVEGRAPH_YFORMAT:-""}
+declare xformat=${LIVEGRAPH_XFORMAT:-""}
+
+declare fillstyle=${LIVEGRAPH_FILLSTYLE:-"solid 1.0 border -1"}
+declare boxwidth=${LIVEGRAPH_BARBOXWIDTH:-1}
+
+# bar options
+# Note DATA format for bar is x y values rather than just a y value
+declare bars=${LIVEGRAPH_BARS:-""}
+declare barlw=${LIVEGRAPH_BARLW:-2}
+
+# histo options
+declare stacks=${LIVEGRAPH_STACKS:-"1"}
+declare histobars=${LIVEGRAPH_HISTOBARS}
+
+# Matrix options
+declare rows=${LIVEGRAPH_ROWS:-10}
+declare cols=${LIVEGRAPH_COLS:-10}
+declare palette=${LIVEGRAPH_PALETTE:-"rgbformula 2,-7,-7"}
+declare cbrange=${LIVEGRAPH_CBRANGE:-"[0:5]"}
+declare cblabel=${LIVEGRAPH_CBLABEL}
+declare nocolorbox=${LIVEGRAPH_NOCOLORBOX:-""}
+
+# Lines options
+declare xlabel=${LIVEGRAPH_XLABEL:-""}
+declare numlines=${LIVEGRAPH_NUMLINES:-"1"}
+
+# To customize indivual lizes set the following variables
+# with for the line X you want to customize
+# eg.
+#    LIVEGRAPH_LINEXTITLE="line X Title"
+#    LIVEGRAPH_LINEXTYPE="1"
+#    LIVEGRAPH_LINEXWEIGHT="1"
+
+declare -r deflineweight=${LIVEGRAPH_DEFLINEWEIGHT:-"3"}
+
+declare suffix=""
+
+declare -i xhistory=${LIVEGRAPH_XHISTORY:-0}
+declare  xwindow=${LIVEGRAPH_XWINDOW:-""}
+declare -i xmin=${LIVEGRAPH_XMIN:-0}
+declare xmax=$xwindow
+declare ymin=${LIVEGRAPH_YMIN:-""}
+declare ymax=${LIVEGRAPH_YMAX:-""}
+
+function cleanupall
+{
+  rm $DATADIR/*.$USER.$dataext
+  rm $DATADIR/*.$USER.gpout
+}
+
+function cleanup
+{
+#  echo "CLEANUP: STARTED ..." >/dev/stderr
+  if [[ -a $DATAFILE ]]
+  then
+    rm $DATAFILE
+    echo "CLEANUP: deleted $DATAFILE" >/dev/stderr
+  fi
+  if [[ -a $GPPRNFILE ]]
+  then
+    rm $GPPRNFILE
+    echo "CLEANUP: deleted $GPPRNFILE" >/dev/stderr
+  fi
+#  echo "CLEANUP: DONE" >/dev/stderr
+}
+
+function initmatrix
+{
+  local c=$1
+  local r=$2
+  local val=$3
+  local i
+  local rowstr
+
+  c=${cols:-$1}
+  r=${rows:-$2}
+  c=${c:-0}
+  r=${r:-2}
+  val=${val:-0}
+  
+  rowstr=$(for ((i=0; i<c; i++ ));do echo -n "$val "; done)
+
+  for (( i=0; i<r; i++ ))
+  do
+    echo $rowstr
+  done >> $DATAFILE
+}
+
+function genhistogramsuffix
+{
+  local -i i
+
+  for (( i=1; i<$stacks+1; i++ ))
+  do
+     if (( i==1 ))
+     then
+       suffix="$suffix '$DATAFILE'"
+     else
+       suffix="${suffix}, ''"
+     fi
+     
+     suffix="$suffix using $i"
+  done
+}
+
+function inithistogram
+{
+  local -i i
+  local rowstr
+  local -i j=${histobars:-1}
+  val=${val:-0}
+
+  
+  rowstr=$(for (( i=0; i<$stacks; i++ ));do echo -n "$val "; done)
+
+  for (( i=0; i<j; i++ ))
+  do
+    echo $rowstr 
+  done >> $DATAFILE
+}
+
+function genlinesuffix
+{
+  local -i i
+  local ltitle
+  local lw
+  local lt
+
+  for ((i=1; i<$numlines+1; i++))
+  do
+    if ((i==1))
+    then
+      suffix="$suffix '$DATAFILE'"
+    else
+      suffix="${suffix}, ''"
+    fi
+
+    suffix="$suffix using 1:$((i+1))" 
+    ltitle="$(eval echo \$LIVEGRAPH_LINE${i}TITLE)"
+    lw="$(eval echo \$LIVEGRAPH_LINE${i}WEIGHT)"
+    lw=${lw:-$deflineweight}
+    lt="$(eval echo \$LIVEGRAPH_LINE${i}TYPE)"
+    lt=${lt:-$i}    
+
+    suffix="$suffix title \"$ltitle\" with lines lw $lw lt $lt"
+  done
+}
+
+function initbar
+{
+  echo "0 0" > $DATAFILE
+}
+
+function initlines
+{
+  local initstr
+  initstr="0"
+
+  for ((i=0; i<$numlines; i++))
+  do
+    initstr="0 ${initstr}"
+  done
+
+  echo "$initstr" > $DATAFILE
+}
+
+function init
+{
+  case "$plottype" in
+  'lines')
+     initlines
+     genlinesuffix
+     ;;
+  'matrix')
+     initmatrix
+     ;;
+  'histogram')
+     inithistogram
+     genhistogramsuffix  
+     ;;
+  'bar')
+     initbar
+     ;;
+  *)
+     echo "ERROR: unsupported plot type: $plottype" >&2
+     exit -1
+  esac
+}
+
+function plotmatrix
+{
+  echo "splot \"$DATAFILE\" matrix with image"
+}
+
+function plotlines
+{
+  echo "plot [$xmin:$xmax] [$ymin:$ymax] $suffix"
+}
+
+function plothistogram
+{
+  echo "plot $suffix"
+}
+
+function plotbar
+{
+  echo "plot \"$DATAFILE\" with boxes lw $barlw"
+}
+
+function setupgpprnfile
+{
+  mkfifo $GPPRNFILE
+}
+
+function opengpprn
+{
+   exec 4<$GPPRNFILE
+}
+
+function waitgp
+{
+  local line 
+  echo "print \"DONE\""
+  read line <&4
+}
+
+function gnuplotinit
+{
+   setupgpprnfile
+   echo "set print \"$GPPRNFILE\""
+   opengpprn
+   waitgp
+   echo "set term x11"
+   echo "reset"
+   echo "set title \"$title\""
+   echo "set xtics 1" 
+
+   if [[ -z $xlabel ]]
+   then
+      echo "unset xtic"
+   fi
+
+   if [[ -n $yformat ]]
+   then
+      echo "set format y \"$yformat\""
+   fi
+
+   if [[ -n $xformat ]]
+   then
+      echo "set format x \"$xformat\""
+   fi
+
+   case "$plottype" in
+   'lines')
+     echo "set ylabel \"$ylabel\""
+     echo "set xlabel \"$xlabel\""
+     ;;
+   'matrix')
+     echo "unset key"
+     echo "set xlabel \"$xlabel\""
+     if [[ -z $ylabel ]]
+     then
+        echo "unset ytic"
+     else
+        echo "set ylabel \"$ylabel\""
+     fi
+     echo "set palette $palette"
+     echo "set cbrange $cbrange"
+     if [[ -n $nocolorbox ]]
+     then
+       echo "unset colorbox"
+     else
+       echo "set cblabel \"$cblabel\""
+     fi
+     echo "unset cbtics"
+     echo "set xrange [-0.5:$(echo $cols - 0.5 | bc)]"
+     echo "set yrange [-0.5:$(echo $rows - 0.5 | bc)]"
+     echo "set view map"
+     ;;
+   'histogram')
+     echo "unset key"
+     echo "set style data histogram"
+     echo "set style histogram rowstacked" 
+     echo "set yrange [0:]"
+     echo "set style fill $fillstyle"
+     ;;
+   'bar')
+     echo "unset key"
+     echo "set boxwidth $boxwidth"
+     echo "set yrange [0:]"
+     echo "set style fill $fillstyle"
+     ;;
+   *)
+     echo "ERROR: unsupported plot type: $plottype" >&2
+     exit -1
+   esac
+   plot$plottype
+   waitgp
+}
+
+function looplines
+{
+   local -i i=0
+   local line
+
+   while read line
+   do
+     echo $i $line >> $DATAFILE
+     if [[ -n $xmax ]] && (( $i == $xmax ))
+     then
+       (( xmin = xmax - xhistory ))
+       (( xmax = xmin + xwindow ))
+       tail -$xwindow $DATAFILE > ${DATAFILE}.last
+       mv ${DATAFILE}.last $DATAFILE
+       plot$plottype
+       waitgp
+     else
+       echo replot
+       waitgp
+     fi
+     ((i++))
+   done
+}
+
+function loophistogram
+{
+  local -i i=0
+  local -i j=0  
+  local -i cleardata=1
+  local val rest
+
+  while read val rest
+  do
+    if [[ -z $histobars && -z $val ]]
+    then
+      if (( i == 0 ))
+      then
+        inithistogram
+      fi
+      echo replot
+      waitgp
+      (( i=0 ))
+      cat /dev/null > $DATAFILE
+      continue
+    fi
+
+    if (( cleardata == 1 ))
+    then
+      cat /dev/null > $DATAFILE
+      (( cleardata=0 ))
+    fi
+
+    echo -n "$val " >> $DATAFILE
+    ((i++))
+    if (( i == $stacks ))
+    then
+      (( i=0 ))
+      echo >> $DATAFILE
+      (( j++ ))
+    fi
+    
+    if [[ -n $histobars ]] && (( j == $histobars ))
+    then
+      echo replot
+      waitgp
+      (( j=0 ))
+      (( i=0 ))
+      (( cleardata=1 ))
+    fi
+  done
+}
+
+
+function loopbar
+{
+  local -i i=0
+  local -i cleardata=1
+  local line
+
+  while read line
+  do
+    if [[ -z $bars && -z $line ]]
+    then
+      if (( i == 0 ))
+      then
+        initbar
+      fi
+      echo replot
+      waitgp
+      (( i=0 ))
+      cat /dev/null > $DATAFILE
+      continue
+    fi
+
+    if (( cleardata == 1 ))
+    then
+      cat /dev/null > $DATAFILE
+      (( cleardata=0 ))
+    fi
+
+    echo  "$line" >> $DATAFILE
+    ((i++))    
+    if [[ -n $bars ]] && (( i == $bars ))
+    then
+      echo replot
+      waitgp
+      (( i=0 ))
+      (( cleardata=1 ))
+    fi
+  done
+}
+
+function loopmatrix
+{
+  local -i i=0
+  local -i j=0
+  local -i cleardata=1
+
+  while read val rest
+  do
+   if (( cleardata == 1 ))
+   then
+     cat /dev/null > $DATAFILE
+     (( cleardata=0 ))
+   fi
+   echo -n "$val " >> $DATAFILE
+   ((i++))
+   if (( i == $cols ))
+   then
+      (( i=0 ))
+      echo >> $DATAFILE
+      (( j++ ))
+   fi
+   if (( j == $rows ))
+   then
+     echo replot
+     waitgp
+     (( j=0 ))
+     (( i=0 ))
+     (( cleardata=1 ))
+   fi
+  done
+}
+
+trap cleanup SIGINT SIGQUIT SIGKILL SIGTRAP SIGABRT SIGBUS EXIT
+
+#cleanupall
+init
+gnuplotinit
+loop$plottype
