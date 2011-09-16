@@ -1,0 +1,98 @@
+#!/bin/bash
+#set -x
+# Global configuration settings
+declare -x -r DEFSLEEP="${FOXMON_SLEEP:-2}"
+declare -x -r DEFCOUNT="${FOXMON_COUNT:-10}"
+
+# Global Variables
+typeset -x -i count
+typeset -x -i sleep
+typeset -x -i verbose
+typeset -x -a nodes
+typeset -x -a status
+typeset -x -i num
+typeset -x -i i
+typeset -x -i cstat
+typeset -x -i alive
+typeset -x node
+
+function usage
+{
+echo \
+"USAGE: $(basename $0) [-v] [-h] [-c count] [-s sec] <node> [<node> ...]
+         -h help
+         -v verbose
+         -c count : loop count: 0 is infinite default is $DEFCOUNT
+         -s secs : seconds to sleep between loop intervals " > /dev/stderr
+  exit -1
+}
+
+function VERBOSE
+{
+  ((verbose > 0)) && printf "$*\n" > /dev/stderr
+}
+
+function ERROR
+{
+    printf "ERROR: $*\n" > /dev/stderr
+    usage 
+}
+
+function processArgs
+{
+  local    origargs="$@"
+  local -i optcount=0
+  
+  count=$DEFCOUNT
+  sleep=$DEFSLEEP
+
+  while getopts "c:s:vh" OPT; do 
+    case $OPT in
+      ("h") usage; exit -1;;
+      ("c") count="$OPTARG"; (( optcount+=2 ));;
+      ("s") sleep="$OPTARG"; (( optcount+=2 ));;
+      ("v") verbose=1;(( optcount+=1 ));;
+    esac
+  done
+
+  shift $optcount
+  nodes=( "$@" )
+  num=${#nodes[@]}
+
+  if (( num < 1 )); then
+    ERROR "must specify at least one node"
+  fi
+}
+
+# main
+
+processArgs $@
+
+status=( "${nodes[@]/*/1}" )
+
+while true; 
+do
+    alive=0;
+    for (( i=0 ; i<num; i++ ))
+    do
+	node=${nodes[$i]}
+	cstat=${status[$i]}
+	if (( $cstat == 1 )); then
+	    VERBOSE "Checking $i: $node current $cstat"
+	    if ping -c 1 $node >/dev/null 2>&1; then
+		(( alive++ ))
+	    else
+		status[$i]=0
+	    fi
+	fi
+	echo ${status[$i]}
+    done
+    echo "$count: Num: $num Alive: $alive Dead: $(( num - alive ))"
+    if (( count >= 1 )); then
+      (( count-- ))
+      if (( count == 0 )); then
+        exit;
+      fi
+    fi
+    (( $sleep > 0 )) && sleep $sleep
+done

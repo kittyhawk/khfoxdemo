@@ -64,8 +64,8 @@ while [[ ! -a log ]]; do sleep 1; done
 export LIVEGRAPH_TITLE="Living Nodes"
 export LIVEGRAPH_YLABEL="Count"
 export LIVEGRAPH_YMAX=$((rows * cols * 2))
-export LIVEGRAPH_XWINDOW=100
-export LIVEGRAPH_XHISTORY=50
+export LIVEGRAPH_XWINDOW=10
+export LIVEGRAPH_XHISTORY=5
 
 tail -n+0 -s0 -F log | while read line; do if [[ $line = total:* ]]; then echo ${line##*:}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x100 &
 
