@@ -1,11 +1,61 @@
 #!/bin/bash
-export verbose=1
-LIVEGRAPH=./livegraph
-ARGONNEFE=bg
+#set -x 
+# Copyright (C) 2011 by Project SESA, Boston University
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+# Global configuration settings
+declare -x -r BASEDIR="${KHFOXDEMO_BASEDIR:-$(dirname $(type -p -a khkillvis))}"
+declare -x -r LIVEGRAPH=${BASEDIR}/livegraph
+declare -x -r ARGONNEFE=bg
+declare -x    LOGFILE=/tmp/$(basename $0).log.$$
+
+# Global Variables
+typeset -i -x verbose=0
+typeset -i -x doliving=1
+typeset -i -x dostatus=1
+typeset -i -x locallog=0
+typeset -x name
+typeset -i -x rows
+typeset -i -x cols
+
+function usage
+{
+echo \
+"USAGE: $(basename $0) [-h] [-v] [-L] [-S] [-f] <name> <rows> <cols>]
+         -h help
+         -v verbose
+         -L do NOT display plot of living count
+         -S do NOT display status plot
+         -f treat name as a local log file other wise it will be used as a host that contains the log" > /dev/stderr
+  exit -1
+}
 
 function VERBOSE
 {
   ((verbose > 0)) && printf "$*\n" > /dev/stderr
+}
+
+function ERROR
+{
+    printf "ERROR: $*\n" > /dev/stderr
+    usage 
 }
 
 function killchildren 
@@ -33,6 +83,44 @@ function cleanup
    killchildren
 }
 
+function processArgs
+{
+  local    origargs="$@"
+  local -i optcount=0
+  
+  count=$DEFCOUNT
+  sleep=$DEFSLEEP
+
+  while getopts "LSfvh" OPT; do 
+    case $OPT in
+      ("h") usage; exit -1;;
+      ("L") doliving=0; (( optcount+=1 ));;
+      ("S") dostatus=0; (( optcount+=1 ));;
+      ("f") locallog=1; (( optcount+=1 ));;
+      ("v") verbose=1;(( optcount+=1 ));;
+      ("h") locallog=1; (( optcount+=1 ));;
+    esac
+  done
+
+  shift $optcount
+
+  if (( doliving == 0 && dostatus == 0 )); then
+    ERROR "neither living plot or status plot selected nothing to do"
+  fi
+
+  name=$1
+  rows=$2
+  cols=$3
+
+  if [[ -z $name || -z $rows || -z $cols ]]; then
+    usage
+  fi
+
+  (( locallog == 1 )) &&  LOGFILE=$name
+
+}
+
+
 trap cleanup SIGHUP 
 trap cleanup SIGTRAP 
 trap cleanup SIGKILL 
@@ -43,43 +131,45 @@ trap cleanup SIGABRT
 trap "" EXIT
 trap "" SIGTERM
 
-export PATH=$PATH:scripts
+# main
+processArgs $@
 
-host=$1
-rows=$2
-cols=$3
+if [[ -a $LOGFILE ]]; then rm $LOGFILE; fi
 
-if [[ -z $host || -z $rows || -z $cols ]]; then
-   echo "USAGE $0 <host> <rows> <cols>"
-   exit -1
-fi
-
-if [[ -a log ]]; then rm log; fi
-
-if [[ $host != "log" ]]
+if (( locallog == 0 ))
 then
-  (ssh -T $ARGONNEFE "ssh -T root@$host tail -n+0 -s0 -F log" </dev/null ) > log &
+  (ssh -T $ARGONNEFE "ssh -T root@$name tail -n+0 -s0 -F log" </dev/null ) > $LOGFILE &
 fi
 
-while [[ ! -a log ]]; do sleep 1; done
+while [[ ! -a $LOGFILE ]]; do VERBOSE "waiting for log data"; sleep 2; done
 
+if (( doliving == 1 ))
+then 
+  export LIVEGRAPH_TITLE="Living Nodes"
+  export LIVEGRAPH_YLABEL="Count"
+  export LIVEGRAPH_YMAX=$((rows * cols * 2))
+  export LIVEGRAPH_YMIN=0
+  export LIVEGRAPH_XWINDOW=10
+  export LIVEGRAPH_XHISTORY=5
 
-export LIVEGRAPH_TITLE="Living Nodes"
-export LIVEGRAPH_YLABEL="Count"
-export LIVEGRAPH_YMAX=$((rows * cols * 2))
-export LIVEGRAPH_XWINDOW=10
-export LIVEGRAPH_XHISTORY=5
+  if (( dostatus == 1 )); then
+      tail -s0 -n+0 -F $LOGFILE | while read line; do if [[ $line = total:* ]]; then echo ${line##*:}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x100 &
+  else
+      tail -s0 -n+0 -F $LOGFILE | while read line; do if [[ $line = total:* ]]; then echo ${line##*:}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x100
+  fi
+fi
 
-tail -n+0 -F log | while read line; do if [[ $line = total:* ]]; then echo ${line##*:}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x100 &
+if (( dostatus == 1 ))
+then
+  export LIVEGRAPH_TITLE="Node Status"
+  export LIVEGRAPH_YLABEL=""
+  export LIVEGRAPH_CBLABEL='DEAD -> ALIVE' 
+  export LIVEGRAPH_NOCOLORBOX="1"
+  export LIVEGRAPH_CBRANGE='[0:1]'
+  export LIVEGRAPH_COLS=$cols
+  export LIVEGRAPH_PALETTE='rgbformula -3,3,0'
+  export LIVEGRAPH_PLOTTYPE=matrix
+  export LIVEGRAPH_ROWS=$rows
 
-export LIVEGRAPH_TITLE="Node Status"
-export LIVEGRAPH_YLABEL=""
-export LIVEGRAPH_CBLABEL='DEAD -> ALIVE' 
-export LIVEGRAPH_NOCOLORBOX="1"
-export LIVEGRAPH_CBRANGE='[0:1]'
-export LIVEGRAPH_COLS=$cols
-export LIVEGRAPH_PALETTE='rgbformula -3,3,0'
-export LIVEGRAPH_PLOTTYPE=matrix
-export LIVEGRAPH_ROWS=$rows
-
-tail -n+0 -F log | while read line; do if [[ $line != total:* ]]; then echo ${line}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x500
+  tail -s0 -n+0 -F $LOGFILE | while read line; do if [[ $line != total:* ]]; then echo ${line}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x500
+fi
