@@ -30,20 +30,21 @@ declare -x    LOGFILE=/tmp/$(basename $0).log.$$
 typeset -i -x verbose=0
 typeset -i -x doliving=1
 typeset -i -x dostatus=1
-typeset -i -x locallog=0
+typeset -i -x locallog=1
 typeset -x name
+typeset -x host
 typeset -i -x rows
 typeset -i -x cols
 
 function usage
 {
 echo \
-"USAGE: $(basename $0) [-h] [-v] [-L] [-S] [-f] <name> <rows> <cols>]
+"USAGE: $(basename $0) [-h] [-v] [-L] [-S] [-r <host>] <logfile> <rows> <cols>]
          -h help
          -v verbose
          -L do NOT display plot of living count
          -S do NOT display status plot
-         -f treat name as a local log file other wise it will be used as a host that contains the log" > /dev/stderr
+         -r host at argonnefe that the log file should be obtained from" > /dev/stderr
   exit -1
 }
 
@@ -91,14 +92,13 @@ function processArgs
   count=$DEFCOUNT
   sleep=$DEFSLEEP
 
-  while getopts "LSfvh" OPT; do 
+  while getopts "LSr:vh" OPT; do 
     case $OPT in
       ("h") usage; exit -1;;
       ("L") doliving=0; (( optcount+=1 ));;
       ("S") dostatus=0; (( optcount+=1 ));;
-      ("f") locallog=1; (( optcount+=1 ));;
+      ("r") locallog=0; host="$OPTARG"; (( optcount+=2 ));;
       ("v") verbose=1;(( optcount+=1 ));;
-      ("h") locallog=1; (( optcount+=1 ));;
     esac
   done
 
@@ -138,7 +138,7 @@ if [[ -a $LOGFILE ]]; then rm $LOGFILE; fi
 
 if (( locallog == 0 ))
 then
-  (ssh -T $ARGONNEFE "ssh -T root@$name tail -n+0 -s0 -F log" </dev/null ) > $LOGFILE &
+  (ssh -T $ARGONNEFE "ssh -T root@$host tail -n+0 -s0 -F $name" </dev/null ) > $LOGFILE &
 fi
 
 while [[ ! -a $LOGFILE ]]; do VERBOSE "waiting for log data"; sleep 2; done
