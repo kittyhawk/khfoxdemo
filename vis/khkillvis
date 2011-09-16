@@ -56,7 +56,10 @@ fi
 
 if [[ -a log ]]; then rm log; fi
 
-(ssh -T $ARGONNEFE "ssh -T root@$host tail -n+0 -s0 -F log" </dev/null ) > log &
+if [[ $host != "log" ]]
+then
+  (ssh -T $ARGONNEFE "ssh -T root@$host tail -n+0 -s0 -F log" </dev/null ) > log &
+fi
 
 while [[ ! -a log ]]; do sleep 1; done
 
@@ -67,7 +70,7 @@ export LIVEGRAPH_YMAX=$((rows * cols * 2))
 export LIVEGRAPH_XWINDOW=10
 export LIVEGRAPH_XHISTORY=5
 
-tail -n+0 -s0 -F log | while read line; do if [[ $line = total:* ]]; then echo ${line##*:}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x100 &
+tail -n+0 -F log | while read line; do if [[ $line = total:* ]]; then echo ${line##*:}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x100 &
 
 export LIVEGRAPH_TITLE="Node Status"
 export LIVEGRAPH_YLABEL=""
@@ -79,4 +82,4 @@ export LIVEGRAPH_PALETTE='rgbformula -3,3,0'
 export LIVEGRAPH_PLOTTYPE=matrix
 export LIVEGRAPH_ROWS=$rows
 
-tail -n+0 -s0 -F log | while read line; do if [[ $line != total:* ]]; then echo ${line}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x500
+tail -n+0 -F log | while read line; do if [[ $line != total:* ]]; then echo ${line}; fi; done | $LIVEGRAPH | gnuplot -noraise -geometry 500x500

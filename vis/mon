@@ -87,7 +87,7 @@ do
 	fi
 	echo ${status[$i]}
     done
-    echo "$count: Num: $num Alive: $alive Dead: $(( num - alive ))"
+    echo "total: $num dead: $(( num - alive )) alive: $alive"
     if (( count >= 1 )); then
       (( count-- ))
       if (( count == 0 )); then
