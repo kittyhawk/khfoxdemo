@@ -1,0 +1,10 @@
+#!/bin/bash
+
+anlip=$1
+
+if [[ -z $anlip ]]; then
+  echo "ERROR: $0 <anlip>"
+  exit -1
+fi
+
+khkillvis -L -r $anlip monlog 25 20

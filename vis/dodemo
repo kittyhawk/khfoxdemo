@@ -1,0 +1,4 @@
+#!/bin/bash
+
+khstat $1 &
+appstat $1

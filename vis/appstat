@@ -1,0 +1,10 @@
+#!/bin/bash
+
+feip=$1
+
+if [[ -z $feip ]]; then
+  echo "ERROR: $0 <feip>"
+  exit -1
+fi
+
+khkillvis -r $feip log 25 20
