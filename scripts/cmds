@@ -1,0 +1,4 @@
+khbootapp -K uImage 499 mpi.cpio
+echo "127.0.0.1" > .mpi_hostfile
+cat root.499.workers | khdo peripcmd 'echo %ip% >> .mpi_hostfile'
+mpirun -v -pernode -hostfile .mpi_hostfile pingpong

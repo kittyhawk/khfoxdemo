@@ -1,0 +1,9 @@
+The app you want to run needs to be in the same directory on all nodes
+By default the mpi.cpio has pingpong in the root directory
+pingpong should exist in the same location on the khfoxdev node
+
+additionally the following packages need to be installed on the foxdev node
+openmpi-bin
+openmpi-common
+libopenmpi1
+libopenmpi-dev

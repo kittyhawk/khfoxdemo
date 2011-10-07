@@ -1,0 +1,2 @@
+cmds shows a sample usage of the mpi utilities
+be sure that the kernel loaded on the mpi nodes has the panic handler

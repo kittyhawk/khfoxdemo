@@ -1,0 +1,6 @@
+#!/bin/bash
+#set -x
+#usage: cat khcookie | khfoxkill NUM
+#causes node with bgp_rank NUM to panic
+
+khdo writecon "if [ \`cat /proc/device-tree/u-boot-env/bgp_rank\` -eq $1 ]; then exit; fi"
